@@ -1,3 +1,6 @@
+MAX_NEW_TOKENS = 512
+
+
 def test_model(model, tokenizer, test_examples):
     import torch
 
@@ -7,12 +10,12 @@ def test_model(model, tokenizer, test_examples):
     with torch.no_grad():
         for history, reference in test_examples:
             tokens = tokenizer.apply_chat_template(history, tokenize=True, return_dict=False, add_generation_prompt=True)
-            if len(tokens) + 192 > 2048:
-                raise ValueError("Test context is too long to reserve 192 reply tokens.")
+            if len(tokens) + MAX_NEW_TOKENS > 2048:
+                raise ValueError(f"Test context is too long to reserve {MAX_NEW_TOKENS} reply tokens.")
             input_ids = torch.tensor([tokens], dtype=torch.long, device=device)
             output = model.generate(
                 input_ids=input_ids, attention_mask=torch.ones_like(input_ids),
-                max_new_tokens=192, do_sample=False,
+                max_new_tokens=MAX_NEW_TOKENS, do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,
             )
             reply = output[0, len(tokens):]
