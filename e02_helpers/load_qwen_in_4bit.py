@@ -18,8 +18,11 @@ def load_qwen_in_4bit(model_name):
     tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         model_name, revision=revision, quantization_config=config,
-        torch_dtype=dtype, device_map={"": 0},
+        dtype=dtype, device_map={"": 0},
     )
     model.config.use_cache = False
-    model = prepare_model_for_kbit_training(model)
+    model = prepare_model_for_kbit_training(
+        model,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+    )
     return model, tokenizer
