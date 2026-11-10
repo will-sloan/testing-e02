@@ -6,7 +6,7 @@ def test_model(model, tokenizer, test_examples):
     device = model.get_input_embeddings().weight.device
     with torch.no_grad():
         for history, reference in test_examples:
-            tokens = tokenizer.apply_chat_template(history, tokenize=True, add_generation_prompt=True)
+            tokens = tokenizer.apply_chat_template(history, tokenize=True, return_dict=False, add_generation_prompt=True)
             if len(tokens) + 192 > 2048:
                 raise ValueError("Test context is too long to reserve 192 reply tokens.")
             input_ids = torch.tensor([tokens], dtype=torch.long, device=device)

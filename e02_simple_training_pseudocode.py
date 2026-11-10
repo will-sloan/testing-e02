@@ -13,7 +13,6 @@ from e02_helpers.save_adapter import save_adapter
 
 def fine_tuning_pseudocode():
     # Step 1: Load JSON conversations or JSONL with one conversation per line.
-    # conversations = load_conversation_files("C:/Users/sam3sim/Document/TestingData")
     conversations = load_conversation_files("sample_conversations")
 
 

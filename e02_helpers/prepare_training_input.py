@@ -1,9 +1,9 @@
 def prepare_training_input(tokenizer, conversation_so_far, clinician_reply, train_on_reply_only=True):
     import torch
 
-    prompt = tokenizer.apply_chat_template(conversation_so_far, tokenize=True, add_generation_prompt=True)
+    prompt = tokenizer.apply_chat_template(conversation_so_far, tokenize=True, return_dict=False, add_generation_prompt=True)
     messages = conversation_so_far + [{"role": "assistant", "content": clinician_reply}]
-    tokens = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False)
+    tokens = tokenizer.apply_chat_template(messages, tokenize=True, return_dict=False, add_generation_prompt=False)
     if tokens[:len(prompt)] != prompt:
         raise ValueError("Chat template does not preserve the prompt prefix.")
     if len(tokens) > 2048:
