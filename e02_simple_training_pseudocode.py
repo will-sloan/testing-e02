@@ -32,6 +32,7 @@ def fine_tuning_pseudocode():
 
     # Step 3: Test Qwen before training.
     # Generate from history only; use the clinician reply afterward for scoring.
+    print("Testing the model before training...", flush=True)
     before_results = test_model(qwen, tokenizer, test_examples)
 
     # Step 4: Set up QLoRA fine-tuning.
@@ -43,7 +44,9 @@ def fine_tuning_pseudocode():
     model.peft_config["default"].revision = "cdbee75f17c01a7cc42f958dc650907174af0554"
 
     # One pass through the training examples, for this simple outline.
-    for conversation_so_far, clinician_reply in train_examples:
+    total_steps = len(train_examples)
+    print(f"Starting training: {total_steps} steps", flush=True)
+    for step, (conversation_so_far, clinician_reply) in enumerate(train_examples, start=1):
         # Use Qwen's chat template to turn history + reply into tokens.
         # Score only the reply and its end marker, not the history.
         # Causal masking prevents each prediction from seeing future tokens.
@@ -61,15 +64,22 @@ def fine_tuning_pseudocode():
         loss = model(**batch).loss      # Measure errors predicting the reply.
         loss.backward()                # Calculate how parameters should change.
         optimizer.step()               # Update only the adapter's parameters.
+        print(
+            f"Training step {step}/{total_steps} ({step / total_steps:.0%}) "
+            f"| Loss: {loss.item():.4f}",
+            flush=True,
+        )
 
     # Step 5: Test again using exactly the same held-out examples and settings.
     # test_model uses evaluation mode and disables gradient calculations.
+    print("Training complete. Testing the adapted model...", flush=True)
     after_results = test_model(model, tokenizer, test_examples)
     compare_results(before_results, after_results)
     # Review response quality; different wording alone is not necessarily worse.
 
     # Step 6: Save the adapter for use together with the same Qwen base model.
     save_adapter(model, "saved_adapter")
+    print("Adapter saved to saved_adapter", flush=True)
 
 
 if __name__ == "__main__":
