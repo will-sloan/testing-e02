@@ -1,0 +1,4 @@
+/myenv/
+/real_conversations/
+*.pyc
+__pycache__/
