@@ -2,3 +2,4 @@
 /real_conversations/
 *.pyc
 __pycache__/
+saved_adapter/
