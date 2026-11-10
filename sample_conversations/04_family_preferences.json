@@ -1,0 +1,18 @@
+[
+  {
+    "Speaker": "user",
+    "text": "My family likes different meals, and planning dinner feels frustrating."
+  },
+  {
+    "speaker": "clinician",
+    "text": "Are there any meals or ingredients that everyone already enjoys?"
+  },
+  {
+    "Speaker": "user",
+    "text": "Everyone likes pasta, but we prefer different toppings."
+  },
+  {
+    "speaker": "clinician",
+    "text": "Would a shared pasta meal with separate toppings fit what you want to try?"
+  }
+]

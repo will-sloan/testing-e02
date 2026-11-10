@@ -1,0 +1,18 @@
+[
+  {
+    "Speaker": "user",
+    "text": "I tried making a plan last week, but I only followed it once."
+  },
+  {
+    "speaker": "clinician",
+    "text": "What helped on the day it worked?"
+  },
+  {
+    "Speaker": "user",
+    "text": "I had picked something simple and already had the ingredients."
+  },
+  {
+    "speaker": "clinician",
+    "text": "What would you like to repeat from that experience this week?"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "Speaker": "user",
+    "text": "I want to plan my lunches, but I never know where to start."
+  },
+  {
+    "speaker": "clinician",
+    "text": "What would make lunch planning feel useful to you?"
+  },
+  {
+    "Speaker": "user",
+    "text": "I would like to spend less time deciding what to eat during work."
+  },
+  {
+    "speaker": "clinician",
+    "text": "Would choosing one familiar lunch for tomorrow be a manageable first step?"
+  }
+]

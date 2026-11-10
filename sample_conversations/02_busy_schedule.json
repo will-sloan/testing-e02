@@ -1,0 +1,18 @@
+[
+  {
+    "Speaker": "user",
+    "text": "My work schedule changes every week, so routines are difficult."
+  },
+  {
+    "speaker": "clinician",
+    "text": "Which part of your day tends to stay the most predictable?"
+  },
+  {
+    "Speaker": "user",
+    "text": "Usually the few minutes before I leave for work."
+  },
+  {
+    "speaker": "clinician",
+    "text": "How could you use those few minutes to prepare for the day in a way that suits you?"
+  }
+]

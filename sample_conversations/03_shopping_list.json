@@ -1,0 +1,18 @@
+[
+  {
+    "Speaker": "user",
+    "text": "I keep forgetting things when I go shopping."
+  },
+  {
+    "speaker": "clinician",
+    "text": "Have you tried a shopping list, and what was that experience like?"
+  },
+  {
+    "Speaker": "user",
+    "text": "I write one on paper, but I often leave it at home."
+  },
+  {
+    "speaker": "clinician",
+    "text": "Would keeping the list on your phone be easier, or would you prefer another approach?"
+  }
+]
