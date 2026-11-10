@@ -23,7 +23,7 @@ def fine_tuning_pseudocode():
 
     # Step 1: Load JSON conversations or JSONL with one conversation per line.
     conversations = load_conversation_files(
-        "sample_conversations", max_conversations=MAX_SAMPLES,
+        "real_conversations", max_conversations=MAX_SAMPLES,
     )
 
 
