@@ -15,12 +15,12 @@ def create_examples(conversations, max_examples=None):
             if speaker not in roles or not isinstance(text, str) or not text.strip():
                 raise ValueError("Each message needs a clinician/user speaker and nonempty text.")
             role = roles[speaker]
-            # Use reviewed transcripts: every clinician reply after context is a target.
-            if role == "assistant" and history:
+            # Skip redacted targets, but keep their original text in later context.
+            if role == "assistant" and history and "[redacted]" not in text.casefold():
                 examples.append((history.copy(), text))
                 if max_examples is not None and len(examples) >= max_examples:
                     return examples
             history.append({"role": role, "content": text})
     if not examples:
-        raise ValueError("No clinician replies with preceding context found.")
+        raise ValueError("No clinician replies with preceding context and without [REDACTED] were found.")
     return examples
