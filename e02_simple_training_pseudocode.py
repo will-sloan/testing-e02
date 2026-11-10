@@ -1,3 +1,5 @@
+import json
+
 from e02_helpers.load_conversation_files import load_conversation_files
 from e02_helpers.split_by_conversation import split_by_conversation
 from e02_helpers.create_examples import create_examples
@@ -11,9 +13,18 @@ from e02_helpers.prepare_training_input import prepare_training_input
 from e02_helpers.compare_results import compare_results
 from e02_helpers.save_adapter import save_adapter
 
+MAX_SAMPLES = 8
+
 def fine_tuning_pseudocode():
+    if not isinstance(MAX_SAMPLES, int) or isinstance(MAX_SAMPLES, bool) or MAX_SAMPLES < 2:
+        raise ValueError("MAX_SAMPLES must be a whole number of at least 2.")
+    max_train_examples = max(1, int(MAX_SAMPLES * 0.8))
+    max_test_examples = MAX_SAMPLES - max_train_examples
+
     # Step 1: Load JSON conversations or JSONL with one conversation per line.
-    conversations = load_conversation_files("sample_conversations")
+    conversations = load_conversation_files(
+        "sample_conversations", max_conversations=MAX_SAMPLES,
+    )
 
 
     # Keep whole conversations together so test examples are unseen in training.
@@ -23,8 +34,15 @@ def fine_tuning_pseudocode():
     # Each example is: conversation so far -> reviewed clinician reply.
     # The history must exclude that reply and every message after it.
     # Map clinician to assistant and user to user; no action labels are needed.
-    train_examples = create_examples(train_conversations)
-    test_examples = create_examples(test_conversations)
+    train_examples = create_examples(train_conversations, max_examples=max_train_examples)
+    test_examples = create_examples(test_conversations, max_examples=max_test_examples)
+
+    print(f"Loaded {len(conversations)} conversations", flush=True)
+    print(f"Using {len(train_examples)} training examples and {len(test_examples)} test examples", flush=True)
+    for split, examples in [("Training", train_examples), ("Testing", test_examples)]:
+        for index, (history, reply) in enumerate(examples, start=1):
+            print(f"\n{split} example {index}:", flush=True)
+            print(json.dumps({"input_messages": history, "target_reply": reply}, indent=2, ensure_ascii=False), flush=True)
 
     # Step 2: Load the project's Qwen model and its matching tokenizer.
     # The tokenizer converts messages into the token IDs the model processes.

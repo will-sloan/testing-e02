@@ -1,4 +1,6 @@
-def create_examples(conversations):
+def create_examples(conversations, max_examples=None):
+    if max_examples is not None and max_examples < 1:
+        raise ValueError("max_examples must be at least 1.")
     examples = []
     roles = {"clinician": "assistant", "assistant": "assistant", "user": "user"}
     for conversation in conversations:
@@ -16,6 +18,8 @@ def create_examples(conversations):
             # Use reviewed transcripts: every clinician reply after context is a target.
             if role == "assistant" and history:
                 examples.append((history.copy(), text))
+                if max_examples is not None and len(examples) >= max_examples:
+                    return examples
             history.append({"role": role, "content": text})
     if not examples:
         raise ValueError("No clinician replies with preceding context found.")
