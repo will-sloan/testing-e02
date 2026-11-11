@@ -14,6 +14,7 @@ from e02_helpers.compare_results import compare_results
 from e02_helpers.save_adapter import save_adapter
 
 MAX_SAMPLES = 8
+SKIP_FIRST_CLINICIAN_MESSAGES = 2
 
 def fine_tuning_pseudocode():
     if not isinstance(MAX_SAMPLES, int) or isinstance(MAX_SAMPLES, bool) or MAX_SAMPLES < 2:
@@ -34,10 +35,17 @@ def fine_tuning_pseudocode():
     # Each example is: conversation so far -> reviewed clinician reply.
     # The history must exclude that reply and every message after it.
     # Map clinician to assistant and user to user; no action labels are needed.
-    train_examples = create_examples(train_conversations, max_examples=max_train_examples)
-    test_examples = create_examples(test_conversations, max_examples=max_test_examples)
+    train_examples = create_examples(
+        train_conversations, max_examples=max_train_examples,
+        skip_first_clinician_messages=SKIP_FIRST_CLINICIAN_MESSAGES,
+    )
+    test_examples = create_examples(
+        test_conversations, max_examples=max_test_examples,
+        skip_first_clinician_messages=SKIP_FIRST_CLINICIAN_MESSAGES,
+    )
 
     print(f"Loaded {len(conversations)} conversations", flush=True)
+    print(f"Skipping the first {SKIP_FIRST_CLINICIAN_MESSAGES} clinician messages per conversation as targets", flush=True)
     print(f"Using {len(train_examples)} training examples and {len(test_examples)} test examples", flush=True)
     for split, examples in [("Training", train_examples), ("Testing", test_examples)]:
         for index, (history, reply) in enumerate(examples, start=1):
