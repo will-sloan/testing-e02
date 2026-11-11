@@ -4,7 +4,8 @@ from e02_helpers.load_conversation_files import load_conversation_files
 from e02_helpers.split_by_conversation import split_by_conversation
 from e02_helpers.create_examples import create_examples
 from e02_helpers.load_qwen_in_4bit import load_qwen_in_4bit
-from e02_helpers.test_model import test_model
+from e02_helpers.test_model import test_model, MAX_NEW_TOKENS
+from e02_helpers.fit_context import fit_context
 from e02_helpers.freeze_original_weights import freeze_original_weights
 from e02_helpers.attach_trainable_adapter import attach_trainable_adapter
 from e02_helpers.trainable_parameters import trainable_parameters
@@ -67,15 +68,16 @@ def train_clinician_responses():
     print(f"Loaded {len(conversations)} conversations", flush=True)
     print(f"Skipping the first {SKIP_FIRST_CLINICIAN_MESSAGES} clinician messages per conversation as targets", flush=True)
     print(f"Using {len(train_examples)} training examples and {len(test_examples)} test examples", flush=True)
+    # Step 2: Load the project's Qwen model and its matching tokenizer.
+    # The tokenizer converts messages into the token IDs the model processes.
+    qwen, tokenizer = load_qwen_in_4bit("Qwen/Qwen3-4B-Instruct-2507")
+    train_examples = fit_context(tokenizer, train_examples, MAX_NEW_TOKENS, "Training")
+    test_examples = fit_context(tokenizer, test_examples, MAX_NEW_TOKENS, "Testing")
     if DISPLAY_SAMPLES:
         for split, examples in [("Training", train_examples), ("Testing", test_examples)]:
             for index, (history, reply) in enumerate(examples, start=1):
                 print(f"\n{split} example {index}:", flush=True)
                 print(json.dumps({"input_messages": history, "target_reply": reply}, indent=2, ensure_ascii=False), flush=True)
-
-    # Step 2: Load the project's Qwen model and its matching tokenizer.
-    # The tokenizer converts messages into the token IDs the model processes.
-    qwen, tokenizer = load_qwen_in_4bit("Qwen/Qwen3-4B-Instruct-2507")
 
     # Step 3: Test Qwen before training.
     # Generate from history only; use the clinician reply afterward for scoring.
