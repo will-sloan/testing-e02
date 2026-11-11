@@ -15,6 +15,7 @@ from e02_helpers.save_adapter import save_adapter
 
 MAX_SAMPLES = 8  # Set to None to use all eligible samples.
 SKIP_FIRST_CLINICIAN_MESSAGES = 2
+DISPLAY_SAMPLES = False  # Set to True to print input messages and target replies before training.
 
 def train_clinician_responses():
     if MAX_SAMPLES is None:
@@ -66,10 +67,11 @@ def train_clinician_responses():
     print(f"Loaded {len(conversations)} conversations", flush=True)
     print(f"Skipping the first {SKIP_FIRST_CLINICIAN_MESSAGES} clinician messages per conversation as targets", flush=True)
     print(f"Using {len(train_examples)} training examples and {len(test_examples)} test examples", flush=True)
-    for split, examples in [("Training", train_examples), ("Testing", test_examples)]:
-        for index, (history, reply) in enumerate(examples, start=1):
-            print(f"\n{split} example {index}:", flush=True)
-            print(json.dumps({"input_messages": history, "target_reply": reply}, indent=2, ensure_ascii=False), flush=True)
+    if DISPLAY_SAMPLES:
+        for split, examples in [("Training", train_examples), ("Testing", test_examples)]:
+            for index, (history, reply) in enumerate(examples, start=1):
+                print(f"\n{split} example {index}:", flush=True)
+                print(json.dumps({"input_messages": history, "target_reply": reply}, indent=2, ensure_ascii=False), flush=True)
 
     # Step 2: Load the project's Qwen model and its matching tokenizer.
     # The tokenizer converts messages into the token IDs the model processes.
