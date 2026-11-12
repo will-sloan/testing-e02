@@ -4,7 +4,7 @@ from e02_helpers.load_conversation_files import load_conversation_files
 from e02_helpers.split_by_conversation import split_by_conversation
 from e02_helpers.create_examples import create_examples
 from e02_helpers.load_qwen_in_4bit import load_qwen_in_4bit
-from e02_helpers.test_model import test_model, MAX_NEW_TOKENS
+from e02_helpers.test_model import test_model
 from e02_helpers.fit_context import fit_context
 from e02_helpers.freeze_original_weights import freeze_original_weights
 from e02_helpers.attach_trainable_adapter import attach_trainable_adapter
@@ -17,6 +17,16 @@ from e02_helpers.save_adapter import save_adapter
 MAX_SAMPLES = 8  # Set to None to use all eligible samples.
 SKIP_FIRST_CLINICIAN_MESSAGES = 2
 DISPLAY_SAMPLES = False  # Set to True to print input messages and target replies before training.
+LEARNING_RATE = 0.00002
+MAX_NEW_TOKENS = 512
+GENERATION_SETTINGS = {
+    "max_new_tokens": MAX_NEW_TOKENS,
+    "do_sample": True,  # Set to False for deterministic greedy decoding.
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+}
+
 
 def train_clinician_responses():
     if MAX_SAMPLES is None:
@@ -82,13 +92,13 @@ def train_clinician_responses():
     # Step 3: Test Qwen before training.
     # Generate from history only; use the clinician reply afterward for scoring.
     print("Testing the model before training...", flush=True)
-    before_results = test_model(qwen, tokenizer, test_examples)
+    before_results = test_model(qwen, tokenizer, test_examples, **GENERATION_SETTINGS)
 
     # Step 4: Set up QLoRA fine-tuning.
     # Qwen stays frozen; the adapter learns adjustments inside Qwen.
     freeze_original_weights(qwen)
     model = attach_trainable_adapter(qwen)
-    optimizer = create_optimizer(trainable_parameters(model))
+    optimizer = create_optimizer(trainable_parameters(model), learning_rate=LEARNING_RATE)
     model.train()
     model.peft_config["default"].revision = "cdbee75f17c01a7cc42f958dc650907174af0554"
 
@@ -122,7 +132,7 @@ def train_clinician_responses():
     # Step 5: Test again using exactly the same held-out examples and settings.
     # test_model uses evaluation mode and disables gradient calculations.
     print("Training complete. Testing the adapted model...", flush=True)
-    after_results = test_model(model, tokenizer, test_examples)
+    after_results = test_model(model, tokenizer, test_examples, **GENERATION_SETTINGS)
     compare_results(before_results, after_results)
     # Review response quality; different wording alone is not necessarily worse.
 

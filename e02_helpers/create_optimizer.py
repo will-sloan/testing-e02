@@ -1,4 +1,4 @@
-def create_optimizer(parameters):
+def create_optimizer(parameters, *, learning_rate):
     import torch
 
-    return torch.optim.AdamW(parameters, lr=0.0001)
+    return torch.optim.AdamW(parameters, lr=learning_rate)

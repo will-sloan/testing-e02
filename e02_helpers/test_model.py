@@ -1,8 +1,11 @@
-MAX_NEW_TOKENS = 512
-
-
-def test_model(model, tokenizer, test_examples):
+def test_model(model, tokenizer, test_examples, *, max_new_tokens, do_sample,
+               temperature, top_p, top_k):
     import torch
+
+    generation_settings = {"max_new_tokens": max_new_tokens, "do_sample": do_sample}
+    # Sampling controls only apply when sampling is enabled.
+    if do_sample:
+        generation_settings.update(temperature=temperature, top_p=top_p, top_k=top_k)
 
     model.eval()
     results = []
@@ -10,13 +13,13 @@ def test_model(model, tokenizer, test_examples):
     with torch.no_grad():
         for history, reference in test_examples:
             tokens = tokenizer.apply_chat_template(history, tokenize=True, return_dict=False, add_generation_prompt=True)
-            if len(tokens) + MAX_NEW_TOKENS > 2048:
-                raise ValueError(f"Test context is too long to reserve {MAX_NEW_TOKENS} reply tokens.")
+            if len(tokens) + max_new_tokens > 2048:
+                raise ValueError(f"Test context is too long to reserve {max_new_tokens} reply tokens.")
             input_ids = torch.tensor([tokens], dtype=torch.long, device=device)
             output = model.generate(
                 input_ids=input_ids, attention_mask=torch.ones_like(input_ids),
-                max_new_tokens=MAX_NEW_TOKENS, do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,
+                **generation_settings,
             )
             reply = output[0, len(tokens):]
             results.append({
