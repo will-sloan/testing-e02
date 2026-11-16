@@ -156,20 +156,41 @@ class TranscriptDataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate case-insensitive"):
             self.run_records([bad] + [conversation(i) for i in range(1, 5)])
 
-    def test_missing_ids_group_by_file_including_mixed_explicit_ids(self):
-        folder = Path(self.temp.name) / "mixed"
-        folder.mkdir()
-        for file_number in range(3):
-            records = [conversation(file_number * 10 + i) for i in range(3)]
-            del records[0]["participant_id"]
-            del records[1]["participant_id"]
-            (folder / f"patient-{file_number}.jsonl").write_text(
-                "\n".join(json.dumps(row) for row in records), encoding="utf-8")
-        result = prepare_records(folder, self.config)
-        self.assertEqual(result["report"]["independent_groups"], 3)
-        for split in ("train", "validation", "test"):
-            self.assertEqual(len({example["group_id"] for example in result[split]}), 1)
-            self.assertEqual(len(result[split]), 6)
+    def test_single_jsonl_without_ids_splits_each_conversation(self):
+        for as_arrays in (False, True):
+            records = [conversation(i) for i in range(6)]
+            for record in records:
+                del record['participant_id']
+            if as_arrays:
+                records = [record['messages'] for record in records]
+            self.path.write_text('\n\n'.join(json.dumps(row) for row in records), encoding='utf-8-sig')
+            result = prepare_records(self.path, self.config)
+            self.assertEqual(result['report']['independent_groups'], 6)
+            self.assertEqual(result['report']['conversations_loaded'], 6)
+            self.assertEqual(len(self.examples(result)), 12)
+            # Folder input discovers the same single JSONL file.
+            self.assertEqual(result, prepare_records(self.path.parent, self.config))
+            groups = [{e['group_id'] for e in result[s]} for s in ('train', 'validation', 'test')]
+            self.assertTrue(all(groups))
+            self.assertFalse(groups[0] & groups[1] or groups[0] & groups[2] or groups[1] & groups[2])
+            for example in self.examples(result):
+                self.assertTrue(example['metadata']['source_record'].startswith('transcripts.jsonl:'))
+
+    def test_single_jsonl_mixed_ids_preserves_known_patient_groups(self):
+        records = [conversation(i, participant='shared-patient') for i in range(2)]
+        for i in range(2, 6):
+            record = conversation(i)
+            del record['participant_id']
+            records.append(record)
+        self.path.write_text('\n'.join(json.dumps(row) for row in records), encoding='utf-8')
+        result = prepare_records(self.path, self.config)
+        self.assertEqual(result['report']['independent_groups'], 5)
+        examples = self.examples(result)
+        zero = next(e for e in examples if e['target'] == 'What lunch would work on day 0?')
+        one = next(e for e in examples if e['target'] == 'What lunch would work on day 1?')
+        two = next(e for e in examples if e['target'] == 'What lunch would work on day 2?')
+        self.assertEqual(zero['group_id'], one['group_id'])
+        self.assertNotEqual(zero['group_id'], two['group_id'])
 
     def test_reserved_control_tokens_rejected_even_in_context(self):
         for marker in ("<|im_start|>", "<|im_end|>", "<|endoftext|>"):

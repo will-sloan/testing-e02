@@ -16,7 +16,7 @@ The implementation and available synthetic samples were inspected. The real conv
 
 ## Replacement design
 
-Version 2 uses transcript normalization, patient → clinician turn boundaries, conservative quality checks, optional explicit target review, participant-aware splits, and duplicate checks before training. It keeps the current non-thinking Qwen checkpoint and targets spoken clinician-style replies. The user confirmed that each file represents a separate patient, so missing IDs fall back to source-file grouping, not one group per JSONL record. Stable participant IDs become necessary when visits for one patient span files.
+Version 2 uses transcript normalization, patient → clinician turn boundaries, conservative quality checks, optional explicit target review, participant-aware splits when IDs are available, and duplicate checks before training. It keeps the current non-thinking Qwen checkpoint and targets spoken clinician-style replies. The dataset is a single JSONL file with one conversation on each nonblank line. Missing participant IDs therefore fall back to one group per conversation record, not one group for the entire file. Repeated explicit participant IDs keep sessions together across records and files. Conversation-level splitting cannot establish patient separation when IDs are missing and one person has multiple conversations; stable participant IDs are needed for that guarantee. Prepared splits from the earlier file-grouping implementation must be regenerated into a new directory using manifest schema version 2.
 
 The training method is completion-only supervised fine-tuning using the current Transformers Trainer and PEFT implementations. Explicit labels provide an inspectable contract: history and padding have label `-100`; the final target response and its end-of-message marker remain supervised. This is the same completion-only objective supported by TRL, without relying on automatic template rewriting. TRL's assistant-only masking requires generation tags in the template, while prompt/completion training supports completion-only loss directly. [TRL SFT documentation](https://huggingface.co/docs/trl/sft_trainer)
 
@@ -41,7 +41,7 @@ Start with an untrained baseline on simple sanity prompts and validation histori
 
 Human review should ask: Did the response address the patient's latest point? Did it accurately use earlier context? Did it preserve uncertainty and avoid invented facts? Is it a complete, useful next turn? Is any advice clinically appropriate? Does it finish naturally without filler or loops? A short, naturally terminated answer can still fail every substantive criterion.
 
-Select settings using validation. Use the held-out patient test set only after selecting the recipe. Report the number of patients and examples, excluded long-context examples, and rejected targets alongside quality results so an apparent gain cannot hide reduced dataset coverage.
+Select settings using validation. Use the held-out test set only after selecting the recipe. Describe it as patient-separated only when stable participant IDs establish that separation; otherwise it is conversation-separated. Report the number of known patients or fallback conversation groups and examples, excluded long-context examples, and rejected targets alongside quality results so an apparent gain cannot hide reduced dataset coverage.
 
 ## Runtime versions
 

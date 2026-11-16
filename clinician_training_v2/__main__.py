@@ -6,6 +6,7 @@ import json
 from .settings import load_config, digest, read_jsonl, write_json, write_jsonl
 
 SPLITS = ('train', 'validation', 'test')
+DATA_SCHEMA_VERSION = 2
 DATA_KEYS = ('seed', 'system_prompt', 'require_participant_id', 'validation_fraction',
              'test_fraction', 'min_target_words', 'max_target_words', 'max_examples_per_conversation')
 MODEL_KEYS = ('model_id', 'model_revision', 'system_prompt', 'max_context_tokens',
@@ -93,7 +94,7 @@ def prepare(args, config):
     prepared['report']['post_review_examples'] = {s: len(prepared[s]) for s in SPLITS}
     prepared['report']['reviewed_examples'] = {s: sum(r['metadata']['reviewed'] for r in prepared[s]) for s in SPLITS}
     write_json(output / 'report.json', prepared['report'])
-    write_json(output / 'manifest.json', {'schema_version': 1, 'config': config, 'split_hashes': hashes})
+    write_json(output / 'manifest.json', {'schema_version': DATA_SCHEMA_VERSION, 'config': config, 'split_hashes': hashes})
     print(json.dumps(prepared['report'], indent=2))
     print(f'Prepared local transcripts in {output}. No model training was performed.')
 
@@ -101,6 +102,9 @@ def prepare(args, config):
 def load_data(path, config):
     path = Path(path)
     manifest = json.loads((path / 'manifest.json').read_text(encoding='utf-8'))
+    if manifest.get('schema_version') != DATA_SCHEMA_VERSION:
+        raise ValueError('Prepared data uses an older splitting format. Run prepare again into '
+                         'a new directory to use conversation-level JSONL grouping.')
     if any(manifest['config'][key] != config[key] for key in DATA_KEYS):
         raise ValueError('Data preparation settings differ. Use the same --config or prepare a new dataset.')
     splits = {s: read_jsonl(path / f'{s}.jsonl') for s in SPLITS}

@@ -87,7 +87,7 @@ def _normalize(record, source, source_file, require_participant_id):
         raise ValueError(
             f"{source_id}: missing participant_id. Add a stable pseudonymous participant_id "
             "shared by all sessions for the same person. Set require_participant_id=false "
-            "only if each source file belongs to a different patient."
+            "to allow conversation-level splitting when patient IDs are unavailable."
         )
     conversation = fields.get("conversation_id", source)
     if isinstance(conversation, bool) or not isinstance(conversation, (str, int)) or not str(conversation).strip():
@@ -123,8 +123,9 @@ def _normalize(record, source, source_file, require_participant_id):
             source_indices.append([index])
     return {
         "conversation_id": "conversation_" + _digest([participant, conversation])[:20],
-        "participant_key": ["file", source_file] if missing_id else ["participant", str(participant)],
+        "participant_key": ["conversation_record", source] if missing_id else ["participant", str(participant)],
         "source_file": source_file,
+        "source_record": source,
         "source_id": source_id, "missing_participant_id": missing_id,
         "messages": messages, "source_indices": source_indices,
         "raw_message_count": len(raw_messages),
@@ -195,14 +196,9 @@ def prepare_records(input_path: Path, config: dict) -> dict:
         left, right = find(a), find(b)
         parents[max(left, right)] = min(left, right)
 
-    participant_owner, transcript_owner, file_owner = {}, {}, {}
-    missing_id_files = {record["source_file"] for record in records if record["missing_participant_id"]}
+    participant_owner, transcript_owner = {}, {}
     for index, record in enumerate(records):
         keys = [(participant_owner, _digest(record["participant_key"])), (transcript_owner, record["fingerprint"])]
-        # The dataset owner confirmed one file per patient. If a file has missing
-        # IDs, keep all its records together, including any explicitly tagged ones.
-        if record["source_file"] in missing_id_files:
-            keys.append((file_owner, record["source_file"]))
         for owners, key in keys:
             if key in owners:
                 union(index, owners[key])
@@ -229,6 +225,7 @@ def prepare_records(input_path: Path, config: dict) -> dict:
             if reason:
                 rejections.append({"id": example_id, "conversation_id": record["conversation_id"],
                                    "source_file": record["source_file"],
+                                   "source_record": record["source_record"],
                                    "source_message_indices": record["source_indices"][turn],
                                    "turn_index": turn, "reason": reason})
                 continue
@@ -237,7 +234,8 @@ def prepare_records(input_path: Path, config: dict) -> dict:
                 "id": example_id, "group_id": group_id, "conversation_id": record["conversation_id"],
                 "messages": [{"role": "system", "content": config["system_prompt"]}] + [dict(m) for m in record["messages"][:turn]],
                 "target": message["content"],
-                "metadata": {"source_id": record["source_id"], "source_file": record["source_file"], "turn_index": turn,
+                "metadata": {"source_id": record["source_id"], "source_file": record["source_file"],
+                             "source_record": record["source_record"], "turn_index": turn,
                              "source_message_indices": record["source_indices"][turn],
                              "target_words": len(message["content"].split())},
             })
@@ -291,7 +289,9 @@ def prepare_records(input_path: Path, config: dict) -> dict:
         "split_groups": {split: len(split_groups[split]) for split in split_groups},
         "rejection_counts": dict(sorted(Counter(item["reason"] for item in rejections).items())),
         "seed": config.get("seed", 42),
-        "warnings": (["Participant IDs missing: grouped by source file, relying on the confirmed one-file-per-patient convention. Repeated patients across files require participant IDs."]
+        "warnings": (["Participant IDs missing: each conversation record is a separate split group. "
+                      "If a patient appears in multiple conversations, add a shared participant_id "
+                      "to prevent that patient appearing across splits."]
                      if any(record["missing_participant_id"] for record in records) else []),
     }
     return output

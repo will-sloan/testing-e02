@@ -12,7 +12,7 @@ The pipeline:
 
 1. Loads conversations, normalizes field names and speaker roles, and joins adjacent fragments from the same speaker.
 2. Builds patient-history → clinician-turn examples without including the target or future turns in the input.
-3. Keeps participant groups and detected exact duplicates together when splitting training, validation, and test data.
+3. Keeps known participant groups and detected exact duplicates together when splitting training, validation, and test data; without participant IDs, each conversation is a separate group.
 4. Flags suspect targets for review rather than automatically rewriting clinical statements.
 5. Provides an optional target-review workflow, with a stricter reviewed-target requirement available in configuration.
 6. Teaches only the final response and its end marker; it masks the preceding conversation from the loss.
@@ -41,7 +41,7 @@ The non-PyTorch dependency versions are pinned; PyTorch is installed separately 
 
 ## Input format
 
-Prefer one conversation object per JSON file, or one object per line in JSONL:
+The current dataset is a single JSONL file inside `real_conversations`, with one conversation per nonblank line. The loader accepts either a message array or an object containing `messages` on each line. It also supports one conversation per JSON file. An object can include participant and conversation IDs, as illustrated below (write the whole object on one line in a JSONL file):
 
 ```json
 {
@@ -56,13 +56,17 @@ Prefer one conversation object per JSON file, or one object per line in JSONL:
 
 Use stable pseudonymous participant IDs across visits when available. A clinician is the assistant role and a patient is the user role; these roles must not be reversed. Speaker labels should represent actual speaker turns, not arbitrary transcript chunks. The loader also accepts the legacy message-array format.
 
-At least three independent participant groups are required to create train, validation, and test splits. Three is a mechanical minimum, not enough for a reliable quality estimate. The user confirmed that each file belongs to a separate patient, so `require_participant_id` defaults to `false`: when IDs are absent, all conversations within one source file stay in the same group, including JSONL records. If a patient later appears in multiple files, add stable participant IDs and set `require_participant_id` to `true` before preparing the data again.
+At least three groups with eligible replies are required to create train, validation, and test splits. Three is a mechanical minimum, not enough for a reliable quality estimate. `require_participant_id` defaults to `false`: when IDs are absent, each conversation record is its own group, so different lines in one JSONL file can enter different splits. Repeated explicit participant IDs keep all that person's conversations together, even across files. Without participant IDs, conversation-level splitting cannot guarantee patient separation if the same person appears in multiple conversations. Add stable IDs and set `require_participant_id` to `true` when that distinction matters.
 
 ## Prepare, with optional review
 
 ```powershell
 python -m clinician_training_v2 prepare --input real_conversations --output clinician_training_v2/prepared/initial
 ```
+
+The folder command automatically reads its JSONL file; no file splitting is needed. You can also pass the file directly with `--input real_conversations/your_file.jsonl`.
+
+After updating from the earlier file-grouping implementation, regenerate the prepared data in a new directory, for example `clinician_training_v2/prepared/jsonl_v2`, and use that path for baseline, training, and evaluation. Do not reuse the old prepared splits. The updated preparation manifest uses schema version 2.
 
 Inspect the generated `report.json`, `rejected.jsonl`, and `review_queue.jsonl`. Preparation is deterministic for the same inputs and configuration. Review coverage, split sizes, target quality, duplicate detection, and context exclusions before scheduling training.
 

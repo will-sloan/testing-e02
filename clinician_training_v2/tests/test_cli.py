@@ -58,6 +58,30 @@ class CLITests(unittest.TestCase):
         self.assertEqual(manifest['config'], self.config)
         self.assertEqual(len(read_jsonl(output / 'review_queue.jsonl')), 12)
 
+    def test_single_jsonl_folder_prepares_without_participant_ids(self):
+        records = []
+        for path in sorted(self.source.glob('*.json')):
+            row = json.loads(path.read_text(encoding='utf-8'))
+            del row['participant_id']
+            records.append(row)
+            path.unlink()
+        write_jsonl(self.source / 'all_conversations.jsonl', records)
+        output = self.prepare('jsonl-prepared')
+        splits, manifest = cli.load_data(output, self.config)
+        self.assertEqual(manifest['schema_version'], 2)
+        self.assertEqual(sum(len(rows) for rows in splits.values()), 12)
+        self.assertTrue(all(splits.values()))
+        self.assertEqual(len({row['group_id'] for rows in splits.values() for row in rows}), 6)
+
+    def test_older_prepared_splits_require_regeneration(self):
+        output = self.prepare('old-prepared')
+        path = output / 'manifest.json'
+        manifest = json.loads(path.read_text(encoding='utf-8'))
+        manifest['schema_version'] = 1
+        path.write_text(json.dumps(manifest), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'Run prepare again'):
+            cli.load_data(output, self.config)
+
     def test_review_decisions_are_repeatable_and_preserve_split_assignment(self):
         original = self.prepare('original')
         splits, _ = cli.load_data(original, self.config)
