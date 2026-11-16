@@ -18,7 +18,8 @@ MAX_SAMPLES = 8  # Set to None to use all eligible samples.
 SKIP_FIRST_CLINICIAN_MESSAGES = 2
 DISPLAY_SAMPLES = False  # Set to True to print input messages and target replies before training.
 LEARNING_RATE = 0.00002
-MAX_NEW_TOKENS = 512
+MAX_CONTEXT_TOKENS = 4096  # Total history + reply budget. Try 8192 if GPU memory allows.
+MAX_NEW_TOKENS = 512  # Generation ceiling, reserved within the context budget.
 GENERATION_SETTINGS = {
     "max_new_tokens": MAX_NEW_TOKENS,
     "do_sample": True,  # Set to False for deterministic greedy decoding.
@@ -29,6 +30,12 @@ GENERATION_SETTINGS = {
 
 
 def train_clinician_responses():
+    for name, value in [("MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS), ("MAX_NEW_TOKENS", MAX_NEW_TOKENS)]:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ValueError(f"{name} must be a positive whole number.")
+    if MAX_NEW_TOKENS >= MAX_CONTEXT_TOKENS:
+        raise ValueError("MAX_NEW_TOKENS must be smaller than MAX_CONTEXT_TOKENS.")
+
     if MAX_SAMPLES is None:
         max_train_examples = None
         max_test_examples = None
@@ -78,11 +85,16 @@ def train_clinician_responses():
     print(f"Loaded {len(conversations)} conversations", flush=True)
     print(f"Skipping the first {SKIP_FIRST_CLINICIAN_MESSAGES} clinician messages per conversation as targets", flush=True)
     print(f"Using {len(train_examples)} training examples and {len(test_examples)} test examples", flush=True)
+    print(f"Context limit: {MAX_CONTEXT_TOKENS} tokens; generation limit: {MAX_NEW_TOKENS} tokens", flush=True)
     # Step 2: Load the project's Qwen model and its matching tokenizer.
     # The tokenizer converts messages into the token IDs the model processes.
     qwen, tokenizer = load_qwen_in_4bit("Qwen/Qwen3-4B-Instruct-2507")
-    train_examples = fit_context(tokenizer, train_examples, MAX_NEW_TOKENS, "Training")
-    test_examples = fit_context(tokenizer, test_examples, MAX_NEW_TOKENS, "Testing")
+    train_examples = fit_context(
+        tokenizer, train_examples, MAX_NEW_TOKENS, "Training", max_context_tokens=MAX_CONTEXT_TOKENS,
+    )
+    test_examples = fit_context(
+        tokenizer, test_examples, MAX_NEW_TOKENS, "Testing", max_context_tokens=MAX_CONTEXT_TOKENS,
+    )
     if DISPLAY_SAMPLES:
         for split, examples in [("Training", train_examples), ("Testing", test_examples)]:
             for index, (history, reply) in enumerate(examples, start=1):
@@ -92,7 +104,9 @@ def train_clinician_responses():
     # Step 3: Test Qwen before training.
     # Generate from history only; use the clinician reply afterward for scoring.
     print("Testing the model before training...", flush=True)
-    before_results = test_model(qwen, tokenizer, test_examples, **GENERATION_SETTINGS)
+    before_results = test_model(
+        qwen, tokenizer, test_examples, max_context_tokens=MAX_CONTEXT_TOKENS, **GENERATION_SETTINGS,
+    )
 
     # Step 4: Set up QLoRA fine-tuning.
     # Qwen stays frozen; the adapter learns adjustments inside Qwen.
@@ -114,6 +128,7 @@ def train_clinician_responses():
             conversation_so_far,
             clinician_reply,
             train_on_reply_only=True,
+            max_context_tokens=MAX_CONTEXT_TOKENS,
         )
 
         device = model.get_input_embeddings().weight.device
@@ -132,7 +147,9 @@ def train_clinician_responses():
     # Step 5: Test again using exactly the same held-out examples and settings.
     # test_model uses evaluation mode and disables gradient calculations.
     print("Training complete. Testing the adapted model...", flush=True)
-    after_results = test_model(model, tokenizer, test_examples, **GENERATION_SETTINGS)
+    after_results = test_model(
+        model, tokenizer, test_examples, max_context_tokens=MAX_CONTEXT_TOKENS, **GENERATION_SETTINGS,
+    )
     compare_results(before_results, after_results)
     # Review response quality; different wording alone is not necessarily worse.
 

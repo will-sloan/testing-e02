@@ -1,4 +1,5 @@
-def prepare_training_input(tokenizer, conversation_so_far, clinician_reply, train_on_reply_only=True):
+def prepare_training_input(tokenizer, conversation_so_far, clinician_reply, train_on_reply_only=True,
+                           *, max_context_tokens):
     import torch
 
     prompt = tokenizer.apply_chat_template(conversation_so_far, tokenize=True, return_dict=False, add_generation_prompt=True)
@@ -6,8 +7,8 @@ def prepare_training_input(tokenizer, conversation_so_far, clinician_reply, trai
     tokens = tokenizer.apply_chat_template(messages, tokenize=True, return_dict=False, add_generation_prompt=False)
     if tokens[:len(prompt)] != prompt:
         raise ValueError("Chat template does not preserve the prompt prefix.")
-    if len(tokens) > 2048:
-        raise ValueError("Example exceeds 2048 tokens. Shorten its context before training.")
+    if len(tokens) > max_context_tokens:
+        raise ValueError(f"Example exceeds {max_context_tokens} tokens. Shorten its context before training.")
     if tokenizer.eos_token_id not in tokens[len(prompt):]:
         raise ValueError("The target must include an end-of-message token.")
     input_ids = torch.tensor([tokens], dtype=torch.long)
