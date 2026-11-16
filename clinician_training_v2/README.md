@@ -124,6 +124,8 @@ Compare base and adapted replies on the same prompts and seeds. `blind_review.js
 
 The defaults live in `config.json`. Pass `--config path/to/overrides.json` to merge experiment-specific overrides with those defaults. Keep an override file per experiment. The run metadata records the effective configuration.
 
+Preparation accepts clinician replies up to 1,000 words (`max_target_words`) and retains up to 100 eligible replies per conversation (`max_examples_per_conversation`). Redaction markers such as `[REDACTED]` no longer cause a target to be excluded; the target text is preserved. Length and repetition checks still apply. Regenerate prepared data into a new directory after changing preparation settings or filtering rules.
+
 The default `context_policy` is `skip`: examples whose complete history does not fit are excluded and counted, rather than silently losing earlier information. This can reduce coverage of later visits or longer sessions; inspect the exclusion report. Setting `context_policy` to `recent` explicitly permits dropping oldest whole turns, preserves the system prompt and most recent turn, and reports the removals. No setting truncates a target to pretend it is complete.
 
 Start at 4,096 context tokens. Try 8,192 only after a successful smaller run and a memory measurement. Generation length is a separate ceiling; raising context does not require asking for longer replies. If memory runs out, lower context first and keep the per-device batch at one. Increasing gradient accumulation changes the effective batch size but does not reduce the memory needed for one long example.

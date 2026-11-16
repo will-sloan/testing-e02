@@ -17,6 +17,8 @@ class SettingsTests(unittest.TestCase):
         defaults = load_config()
         self.assertEqual(defaults['max_context_tokens'], 4096)
         self.assertEqual(defaults['context_policy'], 'skip')
+        self.assertEqual(defaults['max_examples_per_conversation'], 100)
+        self.assertEqual(defaults['max_target_words'], 1000)
         updated = self.load_override({'max_context_tokens': 8192})
         self.assertEqual(updated['max_context_tokens'], 8192)
         self.assertEqual(updated['model_id'], defaults['model_id'])

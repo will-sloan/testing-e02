@@ -133,10 +133,8 @@ def _normalize(record, source, source_file, require_participant_id):
     }
 
 
-def target_rejection(text, min_words=1, max_words=500):
+def target_rejection(text, min_words=1, max_words=1000):
     """Return a quality flag, not a judgment of clinical correctness."""
-    if re.search(r"[\[<]\s*redacted\s*[\]>]", text, flags=re.IGNORECASE):
-        return "redacted_target"
     if not re.search(r"\w", _NONVERBAL.sub("", text), flags=re.UNICODE):
         return "nonverbal_target"
     words = re.findall(r"\b[\w'-]+\b", text.casefold())
@@ -157,11 +155,11 @@ def target_rejection(text, min_words=1, max_words=500):
 def _validate_config(config):
     if not isinstance(config.get("system_prompt"), str) or not config["system_prompt"].strip():
         raise ValueError("system_prompt must be a nonempty string.")
-    for name, default in [("seed", 42), ("min_target_words", 1), ("max_target_words", 500), ("max_examples_per_conversation", 100)]:
+    for name, default in [("seed", 42), ("min_target_words", 1), ("max_target_words", 1000), ("max_examples_per_conversation", 100)]:
         value = config.get(name, default)
         if not isinstance(value, int) or isinstance(value, bool) or value < (0 if name == "seed" else 1):
             raise ValueError(f"{name} must be a {'nonnegative' if name == 'seed' else 'positive'} integer.")
-    if config.get("min_target_words", 1) > config.get("max_target_words", 500):
+    if config.get("min_target_words", 1) > config.get("max_target_words", 1000):
         raise ValueError("min_target_words cannot exceed max_target_words.")
     validation = config.get("validation_fraction", 0.15)
     test = config.get("test_fraction", 0.15)
@@ -221,7 +219,7 @@ def prepare_records(input_path: Path, config: dict) -> dict:
                 continue
             raw_candidates += 1
             example_id = "example_" + _digest([record["source_id"], record["fingerprint"], turn])[:24]
-            reason = target_rejection(message["content"], config.get("min_target_words", 1), config.get("max_target_words", 500))
+            reason = target_rejection(message["content"], config.get("min_target_words", 1), config.get("max_target_words", 1000))
             if reason:
                 rejections.append({"id": example_id, "conversation_id": record["conversation_id"],
                                    "source_file": record["source_file"],

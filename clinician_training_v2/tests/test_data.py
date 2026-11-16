@@ -106,11 +106,25 @@ class TranscriptDataTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.run_records([bad] + [conversation(i) for i in range(1, 5)])
 
+    def test_redaction_markers_remain_in_targets_and_context(self):
+        for marker in ('[REDACTED]', '[redacted]', '[Redacted]', '<redacted>'):
+            with self.subTest(marker=marker):
+                record = conversation(0)
+                target = f'What did {marker} suggest you try next?'
+                record['messages'][1]['text'] = target
+                self.assertIsNone(target_rejection(target))
+                result = self.run_records([record] + [conversation(i) for i in range(1, 5)])
+                targets = [e['target'] for e in self.examples(result)]
+                self.assertIn(target, targets)
+                self.assertNotIn('redacted_target', result['report']['rejection_counts'])
+                later = next(e for e in self.examples(result) if e['target'] == 'Could you prepare soup for day 0?')
+                self.assertIn({'role': 'assistant', 'content': target}, later['messages'])
+
     def test_filters_quarantine_without_printing_target_text(self):
         record = conversation(0)
-        record["messages"][1]["text"] = "SECRET_NAME [REDACTED]"
+        record["messages"][1]["text"] = "SECRET_NAME you were like, you were like, you were like"
         result = self.run_records([record] + [conversation(i) for i in range(1, 5)])
-        self.assertEqual(result["report"]["rejection_counts"]["redacted_target"], 1)
+        self.assertEqual(result["report"]["rejection_counts"]["repeated_phrase_target"], 1)
         self.assertNotIn("SECRET_NAME", json.dumps(result["rejected"]))
         # Excluding a target does not silently erase it from later conversational history.
         later = next(e for e in self.examples(result) if e["target"] == "Could you prepare soup for day 0?")
@@ -121,7 +135,8 @@ class TranscriptDataTests(unittest.TestCase):
         self.assertEqual(target_rejection("[laughter] (sighs)"), "nonverbal_target")
         self.assertIsNone(target_rejection("Okay."))
         self.assertEqual(target_rejection("Okay.", min_words=3), "short_target")
-        self.assertEqual(target_rejection("word " * 501), "long_target")
+        self.assertIsNone(target_rejection(' '.join(f'word{i}' for i in range(1000))))
+        self.assertEqual(target_rejection(' '.join(f'word{i}' for i in range(1001))), "long_target")
         self.assertIsNone(target_rejection("Do not change your medication without discussing it with your prescriber."))
         self.assertIsNone(target_rejection("No, that does not mean you failed."))
 

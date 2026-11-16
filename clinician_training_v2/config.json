@@ -11,7 +11,7 @@
   "validation_fraction": 0.15,
   "test_fraction": 0.15,
   "min_target_words": 1,
-  "max_target_words": 500,
+  "max_target_words": 1000,
   "max_examples_per_conversation": 100,
   "learning_rate": 2e-05,
   "epochs": 3,
