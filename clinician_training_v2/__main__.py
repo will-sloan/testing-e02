@@ -168,6 +168,7 @@ def run_model_command(args, config):
     from .runtime import load_model, load_tokenizer, add_adapter, make_trainer
     from .tokenization import encode_split, NoFittingExamples
     from .evaluation import baseline_passes
+    from .sampling import select_training_examples
     splits, manifest = load_data(args.data, config)
     if args.command == 'train' and config['require_reviewed_targets']:
         if any(not r['metadata'].get('reviewed', False) for s in ('train', 'validation') for r in splits[s]):
@@ -224,8 +225,12 @@ def run_model_command(args, config):
         write_jsonl(output / 'train_token_audit.jsonl', error.audit)
         raise
     write_jsonl(output / 'train_token_audit.jsonl', train_audit)
-    print(f'Training: {len(train_examples)}/{len(splits["train"])} examples fit; '
-          f'{len(set(r["group_id"] for r in train_examples))} patient groups.', flush=True)
+    train_batches, train_examples, sample_report = select_training_examples(train_batches, train_examples, config)
+    sample_report['prepared_examples'] = len(splits['train'])
+    write_json(output / 'training_samples.json', sample_report)
+    print(f'Training: {sample_report["selected_examples"]}/{sample_report["available_examples"]} '
+          f'eligible examples selected ({sample_report["prepared_examples"]} before token filtering); '
+          f'{sample_report["patient_groups"]} patient groups.', flush=True)
     if len(train_examples) < 100 or len(examples) < 20:
         print('Small dataset: treat this as a pipeline experiment, not evidence of generalization.', flush=True)
     model = add_adapter(model, config)

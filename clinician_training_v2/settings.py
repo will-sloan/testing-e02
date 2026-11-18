@@ -47,6 +47,9 @@ def validate_config(config):
         raise ValueError('seed must be a nonnegative integer smaller than 2**32.')
     if type(config['skip_first_clinician_turns']) is not int or config['skip_first_clinician_turns'] < 0:
         raise ValueError('skip_first_clinician_turns must be a nonnegative integer.')
+    if config['max_train_samples'] is not None and (
+            type(config['max_train_samples']) is not int or config['max_train_samples'] < 1):
+        raise ValueError('max_train_samples must be a positive integer or null (all eligible training samples).')
     for key in ('max_context_tokens', 'max_new_tokens', 'epochs', 'gradient_accumulation_steps',
                 'lora_rank', 'lora_alpha', 'eval_examples', 'early_stopping_patience',
                 'min_target_words', 'max_target_words', 'max_examples_per_conversation',
@@ -91,7 +94,8 @@ def validate_config(config):
 
 def training_config(config):
     """Paths are operational choices; they must not invalidate a training resume."""
-    merged = {**LEGACY_TRAINER_SETTINGS, **LEGACY_DATA_SETTINGS, **config}
+    # Older runs used every eligible training sample; never infer this from today's config.
+    merged = {'max_train_samples': None, **LEGACY_TRAINER_SETTINGS, **LEGACY_DATA_SETTINGS, **config}
     return {key: value for key, value in merged.items() if key not in WORKFLOW_KEYS}
 
 

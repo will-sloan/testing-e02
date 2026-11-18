@@ -54,6 +54,9 @@ The conversation settings are in that same file:
 | `context_policy` | Handling of history that exceeds the budget: `skip` or `recent` | `skip` |
 | `max_target_words` | Maximum words in a reference clinician reply | `1000` |
 | `max_examples_per_conversation` | Maximum eligible targets selected per conversation | `100` |
+| `max_train_samples` | Maximum fitting training examples used; `null` uses all eligible examples | `null` |
+| `validation_fraction` | Share of independent groups held out for validation | `0.10` |
+| `test_fraction` | Share of independent groups held out for final testing | `0.15` |
 
 Set `skip_first_clinician_turns` to `2` to exclude the first two clinician turns. A turn can contain several sentences; adjacent clinician transcript fragments are merged and count as one turn. A leading clinician greeting also counts. These turns remain in the history for later examples; only their use as targets is skipped. Excluded candidate targets appear as `initial_clinician_turn` in `rejected.jsonl` and the report. Changing this setting or the starter prompt requires preparing the dataset again into a new directory. The default `0` preserves the new pipeline's existing behavior.
 
@@ -117,6 +120,8 @@ The default `input_path` reads the JSONL file inside `real_conversations`; no fi
 
 After updating from the earlier file-grouping implementation, regenerate the prepared data in a new directory, for example by setting `prepared_path` to `clinician_training_v2/prepared/jsonl_v2`. Baseline, training, and evaluation all read that same setting. Do not reuse the old prepared splits. The updated preparation manifest uses schema version 2.
 
+The default split now reserves 10% of independent groups for validation and 15% for testing, leaving roughly 75% for training. Groups stay together, so individual example counts can have different proportions. If your existing dataset was prepared with the previous 15% validation share, run `prepare` into a new directory to apply the new 10% share.
+
 Inspect the generated `report.json`, `rejected.jsonl`, and `review_queue.jsonl`. Preparation is deterministic for the same inputs and configuration. Review coverage, split sizes, target quality, duplicate detection, and context exclusions before scheduling training.
 
 Preparation reports text-level exclusions. Token lengths and context exclusions are measured later by `baseline`/`train` using the actual Qwen tokenizer, and written to `*_token_audit.jsonl`. Rejected targets are not in the approval queue: their rejection entries identify the original source file and zero-based message indices. Inspect these in a working copy of the source dataset, correct transcription errors there if appropriate, and prepare that copy into a new output directory.
@@ -148,6 +153,10 @@ The run folder also contains `base_summary.json`, `base_probes_summary.json`, `v
 ```powershell
 python -m clinician_training_v2 train
 ```
+
+Set `max_train_samples` in `config.json` to a positive integer to limit training, or JSON `null` to use every eligible training example. For example, `"max_train_samples": 1000` uses up to 1,000 examples from the training split. Validation has already been reserved as 10% of independent groups; it is not taken out of those 1,000 examples. Zero, negative values, and the string `"none"` are invalid.
+
+The cap is applied after review, filtering, and token fitting. It retains the per-conversation cap and other eligibility rules, and uses the configured `seed` to select examples reproducibly without changing validation or test data. If fewer examples fit than requested, all fitting examples are used. The training folder's `training_samples.json` records the selected example IDs and counts. Changing only `max_train_samples` can reuse the prepared dataset; choose a new `training_output` for the experiment. Resuming a checkpoint still requires the same training settings.
 
 Training performs baseline validation checks before updating the adapter. By default, at least 75% of sampled responses must stop on EOS, at most 10% may contain detected repetition loops, and none may be empty. The same mechanical checks apply to the probes. If this gate fails, inspect the saved baseline files; setting `baseline_gate` to `false` is an explicit diagnostic override, not evidence that the problem is solved. Long legitimate responses can fail a short generation ceiling, so inspect `coverage.json` and target lengths before interpreting a low stop rate.
 
