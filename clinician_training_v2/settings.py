@@ -4,6 +4,14 @@ import math
 from pathlib import Path
 
 DEFAULT_CONFIG = Path(__file__).with_name('config.json')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PATH_KEYS = ('input_path', 'prepared_path', 'baseline_output', 'training_output',
+             'evaluation_output', 'adapter_path', 'reviews_path', 'resume_checkpoint')
+WORKFLOW_KEYS = (*PATH_KEYS, 'evaluation_split')
+# Historical values only: allow resuming checkpoints predating configurable Trainer controls.
+LEGACY_TRAINER_SETTINGS = dict(train_batch_size=1, eval_batch_size=1,
+                               validation_checks_per_epoch=4, save_total_limit=2, logging_steps=1)
+LEGACY_DATA_SETTINGS = {'skip_first_clinician_turns': 0}
 
 
 def load_config(path=None):
@@ -16,6 +24,19 @@ def load_config(path=None):
         if unknown:
             raise ValueError(f'Unknown configuration keys: {sorted(unknown)}')
         config.update(overrides)
+    return validate_config(config)
+
+
+def validate_config(config):
+    for key in PATH_KEYS:
+        value = config[key]
+        if key in ('adapter_path', 'reviews_path', 'resume_checkpoint') and value is None:
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f'{key} must be a nonempty path string' +
+                             (' or null.' if key in ('adapter_path', 'reviews_path', 'resume_checkpoint') else '.'))
+    if config['evaluation_split'] not in ('validation', 'test'):
+        raise ValueError('evaluation_split must be validation or test.')
     for key in ('model_id', 'model_revision', 'system_prompt'):
         if not isinstance(config[key], str) or not config[key].strip():
             raise ValueError(f'{key} must be a nonempty string.')
@@ -24,9 +45,13 @@ def load_config(path=None):
             raise ValueError(f'{key} must be true or false.')
     if type(config['seed']) is not int or not 0 <= config['seed'] < 2**32:
         raise ValueError('seed must be a nonnegative integer smaller than 2**32.')
+    if type(config['skip_first_clinician_turns']) is not int or config['skip_first_clinician_turns'] < 0:
+        raise ValueError('skip_first_clinician_turns must be a nonnegative integer.')
     for key in ('max_context_tokens', 'max_new_tokens', 'epochs', 'gradient_accumulation_steps',
                 'lora_rank', 'lora_alpha', 'eval_examples', 'early_stopping_patience',
-                'min_target_words', 'max_target_words', 'max_examples_per_conversation'):
+                'min_target_words', 'max_target_words', 'max_examples_per_conversation',
+                'train_batch_size', 'eval_batch_size', 'validation_checks_per_epoch',
+                'save_total_limit', 'logging_steps'):
         if type(config[key]) is not int or config[key] < 1:
             raise ValueError(f'{key} must be a positive integer.')
     if config['min_target_words'] > config['max_target_words']:
@@ -62,6 +87,12 @@ def load_config(path=None):
     if config['weight_decay'] < 0 or config['max_grad_norm'] <= 0:
         raise ValueError('weight_decay must be nonnegative and max_grad_norm must be positive.')
     return config
+
+
+def training_config(config):
+    """Paths are operational choices; they must not invalidate a training resume."""
+    merged = {**LEGACY_TRAINER_SETTINGS, **LEGACY_DATA_SETTINGS, **config}
+    return {key: value for key, value in merged.items() if key not in WORKFLOW_KEYS}
 
 
 def digest(value):

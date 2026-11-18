@@ -72,13 +72,15 @@ def make_trainer(model, tokenizer, config, train_rows, validation_rows, output_p
     import torch
     from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
     from .tokenization import CompletionCollator
-    steps_per_epoch = math.ceil(len(train_rows) / config['gradient_accumulation_steps'])
+    microbatches = math.ceil(len(train_rows) / config['train_batch_size'])
+    steps_per_epoch = math.ceil(microbatches / config['gradient_accumulation_steps'])
     total_steps = steps_per_epoch * config['epochs']
-    eval_steps = max(1, steps_per_epoch // 4)
+    eval_steps = max(1, steps_per_epoch // config['validation_checks_per_epoch'])
     bf16 = torch.cuda.is_bf16_supported()
     args = TrainingArguments(
         output_dir=str(output_path),
-        per_device_train_batch_size=1, per_device_eval_batch_size=1,
+        per_device_train_batch_size=config['train_batch_size'],
+        per_device_eval_batch_size=config['eval_batch_size'],
         gradient_accumulation_steps=config['gradient_accumulation_steps'],
         num_train_epochs=config['epochs'], learning_rate=config['learning_rate'],
         lr_scheduler_type='cosine', warmup_steps=math.ceil(total_steps * config['warmup_ratio']),
@@ -86,9 +88,9 @@ def make_trainer(model, tokenizer, config, train_rows, validation_rows, output_p
         optim='adamw_torch', bf16=bf16, fp16=not bf16,
         gradient_checkpointing=True, gradient_checkpointing_kwargs={'use_reentrant': False},
         eval_strategy='steps', eval_steps=eval_steps, save_strategy='steps', save_steps=eval_steps,
-        save_total_limit=2, load_best_model_at_end=True,
+        save_total_limit=config['save_total_limit'], load_best_model_at_end=True,
         metric_for_best_model='eval_loss', greater_is_better=False,
-        prediction_loss_only=True, logging_steps=1, report_to='none',
+        prediction_loss_only=True, logging_steps=config['logging_steps'], report_to='none',
         seed=config['seed'], data_seed=config['seed'], dataloader_num_workers=0,
         remove_unused_columns=False, label_names=['labels'],
     )

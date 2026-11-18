@@ -39,6 +39,55 @@ python -m clinician_training_v2 doctor
 
 The non-PyTorch dependency versions are pinned; PyTorch is installed separately because the CUDA wheel depends on the driver and device. `doctor` prints the environment, package versions, CUDA availability, GPU, VRAM, and bfloat16 support. It does not execute a quantized forward pass, so neither that report nor installation success proves that CUDA quantization works. Native Windows is supported by current bitsandbytes. This pipeline uses PyTorch attention rather than requiring FlashAttention or an Unsloth installation.
 
+## Configure the workflow in one file
+
+Edit `clinician_training_v2/config.json` for dataset paths, output folders, model settings, filtering, training, and evaluation. No helper Python files need editing.
+
+The conversation settings are in that same file:
+
+| Setting | Meaning | Default |
+| --- | --- | --- |
+| `system_prompt` | Starter instructions prepended to each conversation | Spoken clinician-style instructions |
+| `skip_first_clinician_turns` | Opening clinician turns excluded as targets in each conversation | `0` |
+| `max_context_tokens` | Total token budget for history and reply | `4096` |
+| `max_new_tokens` | Maximum generated reply length, in tokens | `256` |
+| `context_policy` | Handling of history that exceeds the budget: `skip` or `recent` | `skip` |
+| `max_target_words` | Maximum words in a reference clinician reply | `1000` |
+| `max_examples_per_conversation` | Maximum eligible targets selected per conversation | `100` |
+
+Set `skip_first_clinician_turns` to `2` to exclude the first two clinician turns. A turn can contain several sentences; adjacent clinician transcript fragments are merged and count as one turn. A leading clinician greeting also counts. These turns remain in the history for later examples; only their use as targets is skipped. Excluded candidate targets appear as `initial_clinician_turn` in `rejected.jsonl` and the report. Changing this setting or the starter prompt requires preparing the dataset again into a new directory. The default `0` preserves the new pipeline's existing behavior.
+
+Dataset and output paths are configured alongside these settings:
+
+```json
+{
+  "input_path": "real_conversations",
+  "prepared_path": "clinician_training_v2/prepared/dataset1",
+  "baseline_output": "clinician_training_v2/runs/dataset1-baseline",
+  "training_output": "clinician_training_v2/runs/dataset1-training",
+  "evaluation_output": "clinician_training_v2/runs/dataset1-test",
+  "adapter_path": null,
+  "reviews_path": null,
+  "resume_checkpoint": null,
+  "evaluation_split": "test"
+}
+```
+
+These are fields within the existing full configuration, not a replacement for the other settings. `adapter_path: null` selects the `adapter` folder inside `training_output`. Null review and resume paths mean no review file and no resumed checkpoint.
+
+Paths in the configuration are relative to the repository root; absolute paths also work. Use forward slashes in Windows JSON paths, such as `C:/Users/sam3d/Downloads/transcripts.jsonl`, or escape each backslash. For a new dataset, set `input_path` to the new JSONL filename and choose new prepared and output folders. Point directly to the file when `real_conversations` also contains older datasets, because a directory input loads all JSON/JSONL files in that directory.
+
+Commands choose the action; the file supplies its settings:
+
+```powershell
+python -m clinician_training_v2 prepare
+python -m clinician_training_v2 baseline
+python -m clinician_training_v2 train
+python -m clinician_training_v2 evaluate
+```
+
+Run the stages separately and inspect the baseline before training. Invoking the module without an action does not start training. Output directories must be new: if one already exists, change its path in the configuration rather than deleting a previous experiment.
+
 ## Input format
 
 The current dataset is a single JSONL file inside `real_conversations`, with one conversation per nonblank line. The loader accepts either a message array or an object containing `messages` on each line. It also supports one conversation per JSON file. An object can include participant and conversation IDs, as illustrated below (write the whole object on one line in a JSONL file):
@@ -61,12 +110,12 @@ At least three groups with eligible replies are required to create train, valida
 ## Prepare, with optional review
 
 ```powershell
-python -m clinician_training_v2 prepare --input real_conversations --output clinician_training_v2/prepared/initial
+python -m clinician_training_v2 prepare
 ```
 
-The folder command automatically reads its JSONL file; no file splitting is needed. You can also pass the file directly with `--input real_conversations/your_file.jsonl`.
+The default `input_path` reads the JSONL file inside `real_conversations`; no file splitting is needed. To select one file, set `input_path` to `real_conversations/your_file.jsonl` in the configuration.
 
-After updating from the earlier file-grouping implementation, regenerate the prepared data in a new directory, for example `clinician_training_v2/prepared/jsonl_v2`, and use that path for baseline, training, and evaluation. Do not reuse the old prepared splits. The updated preparation manifest uses schema version 2.
+After updating from the earlier file-grouping implementation, regenerate the prepared data in a new directory, for example by setting `prepared_path` to `clinician_training_v2/prepared/jsonl_v2`. Baseline, training, and evaluation all read that same setting. Do not reuse the old prepared splits. The updated preparation manifest uses schema version 2.
 
 Inspect the generated `report.json`, `rejected.jsonl`, and `review_queue.jsonl`. Preparation is deterministic for the same inputs and configuration. Review coverage, split sizes, target quality, duplicate detection, and context exclusions before scheduling training.
 
@@ -76,18 +125,18 @@ The initial prepared dataset can be used directly; manual approval is optional. 
 
 Review complete turns for correctness and suitability as spoken clinician replies. Natural fillers and brief acknowledgments are retained; distinguish them from transcription errors and pathological repeated phrases. Do not invent facts, add an interpretation the transcript does not support, or rewrite speech into a different communication style. Approval concerns the actual target text, not just whether the clinician was correctly identified.
 
-Then prepare a new reviewed dataset:
+Then set `reviews_path` to your working review file and `prepared_path` to a new directory, for example `clinician_training_v2/prepared/reviewed`, and run:
 
 ```powershell
-python -m clinician_training_v2 prepare --input real_conversations --output clinician_training_v2/prepared/reviewed --reviews clinician_training_v2/prepared/reviews.jsonl
+python -m clinician_training_v2 prepare
 ```
 
-All output directories must be new. Existing outputs are not silently overwritten. Keep preparation inputs and settings fixed between the initial and reviewed passes so review IDs and hashes continue to identify the same source examples. The commands below use the initial dataset; substitute `prepared/reviewed` if you completed optional review.
+All output directories must be new. Existing outputs are not silently overwritten. Keep preparation inputs and filtering settings fixed between the initial and reviewed passes so review IDs and hashes continue to identify the same source examples. The commands below use the dataset selected by `prepared_path`. Set `reviews_path` back to `null` before preparing an unrelated dataset without review decisions.
 
 ## Check the base model first
 
 ```powershell
-python -m clinician_training_v2 baseline --data clinician_training_v2/prepared/initial --output clinician_training_v2/runs/baseline
+python -m clinician_training_v2 baseline
 ```
 
 Read the generated responses as well as the summary. `base_probes.jsonl` contains simple arithmetic and conversational probes; `base.jsonl` contains a seeded sample of validation responses. Neither the probes nor the automatic gate score answer correctness. A response that ends naturally can still be wrong, irrelevant, or inappropriate. If baseline responses fail on simple prompts too, inspect the model/tokenizer installation and runtime before training. If simple prompts work but transcript examples fail, inspect speaker mapping, context, and target suitability.
@@ -97,32 +146,37 @@ The run folder also contains `base_summary.json`, `base_probes_summary.json`, `v
 ## Train, then test
 
 ```powershell
-python -m clinician_training_v2 train --data clinician_training_v2/prepared/initial --output clinician_training_v2/runs/run1
+python -m clinician_training_v2 train
 ```
 
 Training performs baseline validation checks before updating the adapter. By default, at least 75% of sampled responses must stop on EOS, at most 10% may contain detected repetition loops, and none may be empty. The same mechanical checks apply to the probes. If this gate fails, inspect the saved baseline files; setting `baseline_gate` to `false` is an explicit diagnostic override, not evidence that the problem is solved. Long legitimate responses can fail a short generation ceiling, so inspect `coverage.json` and target lengths before interpreting a low stop rate.
 
 Training uses a small per-device batch, gradient accumulation, a learning-rate schedule, gradient clipping, checkpointing, and validation-based stopping/selection. The final adapter is saved under the run's `adapter` directory. It is an adapter for the specified Qwen base model, not a standalone full model. `selection.json` identifies the checkpoint selected by validation loss; `adapter.jsonl`, `adapter_summary.json`, and `comparison.json` record the resulting validation comparison.
 
-For an interrupted run, point `--resume` to a trainer checkpoint, not the final adapter folder, and use a new output directory:
+For an interrupted run, set `resume_checkpoint` to an existing trainer checkpoint, not the final adapter folder, and set `training_output` to a new directory. For example:
 
-```powershell
-python -m clinician_training_v2 train --data clinician_training_v2/prepared/initial --output clinician_training_v2/runs/run1-resumed --resume clinician_training_v2/runs/run1/checkpoints/checkpoint-100
+```json
+{
+  "resume_checkpoint": "clinician_training_v2/runs/dataset1-training/checkpoints/checkpoint-100",
+  "training_output": "clinician_training_v2/runs/dataset1-training-resumed"
+}
 ```
 
-Replace the checkpoint path with one that actually exists. Preserve the same dataset and training configuration when resuming.
+Then run `python -m clinician_training_v2 train`. Replace the checkpoint path with one that actually exists. Preserve the same dataset and training settings when resuming; changing workflow paths does not relax those checks. Set `resume_checkpoint` back to `null` before starting a fresh experiment with a new dataset.
 
 Use the held-out test split once the training recipe has been selected:
 
 ```powershell
-python -m clinician_training_v2 evaluate --data clinician_training_v2/prepared/initial --adapter clinician_training_v2/runs/run1/adapter --split test --output clinician_training_v2/runs/test1
+python -m clinician_training_v2 evaluate
 ```
 
-Compare base and adapted replies on the same prompts and seeds. `blind_review.jsonl` presents randomized A/B pairs with the conversation and a review rubric; keep `blind_review_key.jsonl` closed until the assessment is complete. Judge whether they answer the patient's latest turn, use prior information accurately, avoid repetition, stop naturally, and preserve clinical meaning. Do not rank models by verbatim similarity to a single transcript reply alone. If test results influence another round of tuning, treat that set as development data and obtain a fresh final test set.
+Evaluation uses `evaluation_split` (default `test`), writes to `evaluation_output`, and loads `adapter_path` or the adapter under `training_output` when that field is null. Compare base and adapted replies on the same prompts and seeds. `blind_review.jsonl` presents randomized A/B pairs with the conversation and a review rubric; keep `blind_review_key.jsonl` closed until the assessment is complete. Judge whether they answer the patient's latest turn, use prior information accurately, avoid repetition, stop naturally, and preserve clinical meaning. Do not rank models by verbatim similarity to a single transcript reply alone. If test results influence another round of tuning, treat that set as development data and obtain a fresh final test set.
 
 ## Settings and context
 
-The defaults live in `config.json`. Pass `--config path/to/overrides.json` to merge experiment-specific overrides with those defaults. Keep an override file per experiment. The run metadata records the effective configuration.
+All editable settings live in `config.json`. For an experiment-specific copy, `--config path/to/overrides.json` still merges overrides with those defaults. Existing command-line flags remain optional overrides, for example `python -m clinician_training_v2 baseline --data clinician_training_v2/prepared/older --output clinician_training_v2/runs/older-baseline`. Unlike configuration paths, relative command-line paths are resolved from the current working directory. The run metadata records the effective configuration.
+
+Changing preparation settings such as the system prompt, filtering, or split fractions requires a newly prepared dataset. Path changes alone do not change the data/model compatibility checks. The training controls include `train_batch_size` and `eval_batch_size` (both default 1), `validation_checks_per_epoch` (4), `save_total_limit` (2), and `logging_steps` (1), alongside the existing optimizer, adapter, and context settings. Keep the training microbatch at one initially on the 24 GB GPU; if it is increased, the effective batch is `train_batch_size × gradient_accumulation_steps` on the single GPU.
 
 Preparation accepts clinician replies up to 1,000 words (`max_target_words`) and retains up to 100 eligible replies per conversation (`max_examples_per_conversation`). Redaction markers such as `[REDACTED]` no longer cause a target to be excluded; the target text is preserved. Length and repetition checks still apply. Regenerate prepared data into a new directory after changing preparation settings or filtering rules.
 

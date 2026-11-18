@@ -1,4 +1,13 @@
 {
+  "input_path": "real_conversations",
+  "prepared_path": "clinician_training_v2/prepared/dataset1",
+  "baseline_output": "clinician_training_v2/runs/dataset1-baseline",
+  "training_output": "clinician_training_v2/runs/dataset1-training",
+  "evaluation_output": "clinician_training_v2/runs/dataset1-test",
+  "adapter_path": null,
+  "reviews_path": null,
+  "resume_checkpoint": null,
+  "evaluation_split": "test",
   "model_id": "Qwen/Qwen3-4B-Instruct-2507",
   "model_revision": "cdbee75f17c01a7cc42f958dc650907174af0554",
   "seed": 42,
@@ -6,6 +15,7 @@
   "max_new_tokens": 256,
   "context_policy": "skip",
   "system_prompt": "Continue this transcribed clinician\u2013patient conversation with only the next clinician-style spoken reply to the patient. Use natural, warm conversational language and the patient's stated goals. Brief acknowledgments and ordinary spoken phrasing are appropriate. Do not write speaker labels, stage directions, both sides of the dialogue, or repetitive filler loops. Do not invent patient history, examination findings, or approved changes to medication or treatment. Ask one focused question when useful and finish when the turn is complete. [REDACTED] marks missing information; do not repeat it or guess its contents.",
+  "skip_first_clinician_turns": 0,
   "require_participant_id": false,
   "require_reviewed_targets": false,
   "validation_fraction": 0.15,
@@ -33,5 +43,10 @@
   "top_k": 20,
   "baseline_gate": true,
   "minimum_stop_rate": 0.75,
-  "maximum_loop_rate": 0.1
+  "maximum_loop_rate": 0.1,
+  "train_batch_size": 1,
+  "eval_batch_size": 1,
+  "validation_checks_per_epoch": 4,
+  "save_total_limit": 2,
+  "logging_steps": 1
 }

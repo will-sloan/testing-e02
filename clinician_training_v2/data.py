@@ -12,6 +12,8 @@ from pathlib import Path
 import random
 import re
 
+from .settings import load_config, validate_config
+
 
 ROLES = {
     "user": "user", "patient": "user", "participant": "user",
@@ -133,8 +135,12 @@ def _normalize(record, source, source_file, require_participant_id):
     }
 
 
-def target_rejection(text, min_words=1, max_words=1000):
-    """Return a quality flag, not a judgment of clinical correctness."""
+def target_rejection(text, min_words=None, max_words=None):
+    """Return a quality flag, using the central configuration for omitted limits."""
+    if min_words is None or max_words is None:
+        defaults = load_config()
+        min_words = defaults['min_target_words'] if min_words is None else min_words
+        max_words = defaults['max_target_words'] if max_words is None else max_words
     if not re.search(r"\w", _NONVERBAL.sub("", text), flags=re.UNICODE):
         return "nonverbal_target"
     words = re.findall(r"\b[\w'-]+\b", text.casefold())
@@ -152,31 +158,14 @@ def target_rejection(text, min_words=1, max_words=1000):
     return None
 
 
-def _validate_config(config):
-    if not isinstance(config.get("system_prompt"), str) or not config["system_prompt"].strip():
-        raise ValueError("system_prompt must be a nonempty string.")
-    for name, default in [("seed", 42), ("min_target_words", 1), ("max_target_words", 1000), ("max_examples_per_conversation", 100)]:
-        value = config.get(name, default)
-        if not isinstance(value, int) or isinstance(value, bool) or value < (0 if name == "seed" else 1):
-            raise ValueError(f"{name} must be a {'nonnegative' if name == 'seed' else 'positive'} integer.")
-    if config.get("min_target_words", 1) > config.get("max_target_words", 1000):
-        raise ValueError("min_target_words cannot exceed max_target_words.")
-    validation = config.get("validation_fraction", 0.15)
-    test = config.get("test_fraction", 0.15)
-    if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < 1 for value in (validation, test)) or validation + test >= 1:
-        raise ValueError("validation_fraction and test_fraction must be positive and sum to less than 1.")
-    if not isinstance(config.get("require_participant_id", False), bool):
-        raise ValueError("require_participant_id must be true or false.")
-
-
 def prepare_records(input_path: Path, config: dict) -> dict:
     """Build leakage-controlled train/validation/test examples from transcripts.
 
     The returned examples still contain sensitive transcript text. Keep all
     prepared files local and protected just like the source data.
     """
-    _validate_config(config)
-    records = [_normalize(record, source, source_file, config.get("require_participant_id", False))
+    config = validate_config({**load_config(), **config})
+    records = [_normalize(record, source, source_file, config["require_participant_id"])
                for record, source, source_file in _read_records(input_path)]
     if not records:
         raise ValueError("No conversations found.")
@@ -214,12 +203,18 @@ def prepare_records(input_path: Path, config: dict) -> dict:
             continue
         seen_transcripts.add(record["fingerprint"])
         examples = []
+        clinician_turns = 0
         for turn, message in enumerate(record["messages"]):
+            if message["role"] == "assistant":
+                clinician_turns += 1
             if message["role"] != "assistant" or turn == 0 or record["messages"][turn - 1]["role"] != "user":
                 continue
             raw_candidates += 1
             example_id = "example_" + _digest([record["source_id"], record["fingerprint"], turn])[:24]
-            reason = target_rejection(message["content"], config.get("min_target_words", 1), config.get("max_target_words", 1000))
+            # Exclude opening clinician turns as targets only; later history stays complete.
+            reason = ("initial_clinician_turn"
+                      if clinician_turns <= config["skip_first_clinician_turns"] else
+                      target_rejection(message["content"], config["min_target_words"], config["max_target_words"]))
             if reason:
                 rejections.append({"id": example_id, "conversation_id": record["conversation_id"],
                                    "source_file": record["source_file"],
@@ -237,9 +232,9 @@ def prepare_records(input_path: Path, config: dict) -> dict:
                              "source_message_indices": record["source_indices"][turn],
                              "target_words": len(message["content"].split())},
             })
-        cap = config.get("max_examples_per_conversation", 100)
+        cap = config["max_examples_per_conversation"]
         if len(examples) > cap:
-            random.Random(f"{config.get('seed', 42)}:{record['fingerprint']}").shuffle(examples)
+            random.Random(f"{config['seed']}:{record['fingerprint']}").shuffle(examples)
             for example in examples[cap:]:
                 rejections.append({"id": example["id"], "conversation_id": record["conversation_id"], "reason": "conversation_cap"})
             examples = examples[:cap]
@@ -250,12 +245,13 @@ def prepare_records(input_path: Path, config: dict) -> dict:
     if len(group_ids) < 3:
         raise ValueError(
             f"Need at least three independent participant groups with eligible replies; found {len(group_ids)} "
-            "after quality filtering and duplicate grouping. Add conversations/participant IDs or review target filters."
+            "after opening-turn exclusions, quality filtering and duplicate grouping. "
+            "Add conversations/participant IDs or review skip_first_clinician_turns and target filters."
         )
-    random.Random(config.get("seed", 42)).shuffle(group_ids)
+    random.Random(config["seed"]).shuffle(group_ids)
     count = len(group_ids)
-    n_test = min(max(1, round(count * config.get("test_fraction", 0.15))), count - 2)
-    n_validation = min(max(1, round(count * config.get("validation_fraction", 0.15))), count - n_test - 1)
+    n_test = min(max(1, round(count * config["test_fraction"])), count - 2)
+    n_validation = min(max(1, round(count * config["validation_fraction"])), count - n_test - 1)
     split_groups = {
         "test": group_ids[:n_test],
         "validation": group_ids[n_test:n_test + n_validation],
@@ -274,7 +270,7 @@ def prepare_records(input_path: Path, config: dict) -> dict:
                 output[split].append(example)
         if not output[split]:
             raise ValueError(f"The {split} split has no unique eligible examples. Add independent data or review duplicate transcripts.")
-    random.Random(config.get("seed", 42)).shuffle(output["train"])
+    random.Random(config["seed"]).shuffle(output["train"])
     output["rejected"] = rejections
     output["report"] = {
         "conversations_loaded": len(records), "unique_conversations": len(seen_transcripts),
@@ -283,10 +279,11 @@ def prepare_records(input_path: Path, config: dict) -> dict:
         "raw_messages": sum(record["raw_message_count"] for record in records),
         "merged_turns": sum(len(record["messages"]) for record in records),
         "candidate_replies": raw_candidates, "quality_eligible_replies": quality_candidates,
+        "skip_first_clinician_turns": config["skip_first_clinician_turns"],
         "split_examples": {split: len(output[split]) for split in split_groups},
         "split_groups": {split: len(split_groups[split]) for split in split_groups},
         "rejection_counts": dict(sorted(Counter(item["reason"] for item in rejections).items())),
-        "seed": config.get("seed", 42),
+        "seed": config["seed"],
         "warnings": (["Participant IDs missing: each conversation record is a separate split group. "
                       "If a patient appears in multiple conversations, add a shared participant_id "
                       "to prevent that patient appearing across splits."]

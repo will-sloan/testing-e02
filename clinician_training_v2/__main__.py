@@ -3,12 +3,14 @@ import copy
 from pathlib import Path
 import json
 
-from .settings import load_config, digest, read_jsonl, write_json, write_jsonl
+from .settings import (load_config, digest, read_jsonl, write_json, write_jsonl,
+                       PROJECT_ROOT, PATH_KEYS, LEGACY_DATA_SETTINGS, training_config)
 
 SPLITS = ('train', 'validation', 'test')
 DATA_SCHEMA_VERSION = 2
 DATA_KEYS = ('seed', 'system_prompt', 'require_participant_id', 'validation_fraction',
-             'test_fraction', 'min_target_words', 'max_target_words', 'max_examples_per_conversation')
+             'test_fraction', 'min_target_words', 'max_target_words', 'max_examples_per_conversation',
+             'skip_first_clinician_turns')
 MODEL_KEYS = ('model_id', 'model_revision', 'system_prompt', 'max_context_tokens',
               'max_new_tokens', 'context_policy')
 
@@ -105,7 +107,8 @@ def load_data(path, config):
     if manifest.get('schema_version') != DATA_SCHEMA_VERSION:
         raise ValueError('Prepared data uses an older splitting format. Run prepare again into '
                          'a new directory to use conversation-level JSONL grouping.')
-    if any(manifest['config'][key] != config[key] for key in DATA_KEYS):
+    prepared_config = {**LEGACY_DATA_SETTINGS, **manifest['config']}
+    if any(prepared_config[key] != config[key] for key in DATA_KEYS):
         raise ValueError('Data preparation settings differ. Use the same --config or prepare a new dataset.')
     splits = {s: read_jsonl(path / f'{s}.jsonl') for s in SPLITS}
     for split, rows in splits.items():
@@ -174,7 +177,8 @@ def run_model_command(args, config):
         # Checkpoints live at RUN/checkpoints/checkpoint-N.
         old_manifest = Path(args.resume).parent.parent / 'run_manifest.json'
         previous = json.loads(old_manifest.read_text(encoding='utf-8'))
-        if previous['config'] != config or previous['split_hashes'] != manifest['split_hashes']:
+        if (training_config(previous['config']) != training_config(config) or
+                previous['split_hashes'] != manifest['split_hashes']):
             raise ValueError('Resume requires the original configuration and unchanged prepared data.')
     if args.command == 'evaluate':
         previous = json.loads((Path(args.adapter).parent / 'run_manifest.json').read_text(encoding='utf-8'))
@@ -243,6 +247,40 @@ def run_model_command(args, config):
     print(f'Candidate adapter saved to {output / "adapter"}. The test split was not used for training or selection.')
 
 
+def resolve_command_args(args, config):
+    """Fill omitted flags from config and record the effective paths in the snapshot."""
+    for key in PATH_KEYS:
+        if config[key] is not None:
+            path = Path(config[key]).expanduser()
+            config[key] = str((PROJECT_ROOT / path).resolve())
+
+    def use(flag, key):
+        override = getattr(args, flag, None)
+        if override is not None:
+            # Preserve the existing CLI's working-directory-relative paths.
+            config[key] = str(Path(override).expanduser().resolve())
+        setattr(args, flag, config[key])
+
+    if args.command == 'prepare':
+        use('input', 'input_path')
+        use('reviews', 'reviews_path')
+        use('output', 'prepared_path')
+    elif args.command != 'doctor':
+        use('data', 'prepared_path')
+        use('output', {'baseline': 'baseline_output', 'train': 'training_output',
+                       'evaluate': 'evaluation_output'}[args.command])
+        if args.command == 'train':
+            use('resume', 'resume_checkpoint')
+        elif args.command == 'evaluate':
+            if config['adapter_path'] is None and getattr(args, 'adapter', None) is None:
+                config['adapter_path'] = str(Path(config['training_output']) / 'adapter')
+            use('adapter', 'adapter_path')
+            if args.split is not None:
+                config['evaluation_split'] = args.split
+            args.split = config['evaluation_split']
+    return args
+
+
 def main():
     parser = argparse.ArgumentParser(description='Transcript-aware QLoRA training, separate from e02.')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -250,20 +288,21 @@ def main():
         command = commands.add_parser(name)
         command.add_argument('--config', help='JSON overrides for config.json')
         if name == 'prepare':
-            command.add_argument('--input', required=True)
+            command.add_argument('--input', help='Override input_path from config.json')
             command.add_argument('--reviews')
         elif name != 'doctor':
-            command.add_argument('--data', required=True)
+            command.add_argument('--data', help='Override prepared_path from config.json')
         if name != 'doctor':
-            command.add_argument('--output', required=True, help='New, nonexistent output directory')
+            command.add_argument('--output', help='Override configured output; directory must be new')
         if name == 'train':
             command.add_argument('--resume', help='Existing checkpoint directory, same data/config required')
         if name == 'evaluate':
-            command.add_argument('--adapter', required=True)
-            command.add_argument('--split', choices=('validation', 'test'), default='test')
+            command.add_argument('--adapter', help='Override adapter_path (defaults to training_output/adapter)')
+            command.add_argument('--split', choices=('validation', 'test'))
     args = parser.parse_args()
     try:
         config = load_config(args.config)
+        args = resolve_command_args(args, config)
         if args.command == 'prepare':
             prepare(args, config)
         elif args.command == 'doctor':

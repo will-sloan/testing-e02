@@ -9,6 +9,26 @@ from unittest.mock import patch
 @unittest.skipUnless(all(importlib.util.find_spec(name) for name in ('torch', 'transformers', 'peft', 'accelerate')),
                      'Optional ML dependencies are not installed')
 class RuntimeSmokeTests(unittest.TestCase):
+    def test_configured_batches_and_checkpoint_schedule(self):
+        from clinician_training_v2.runtime import make_trainer
+        from clinician_training_v2.settings import load_config
+        from types import SimpleNamespace
+        config = load_config()
+        config.update(train_batch_size=2, eval_batch_size=3, gradient_accumulation_steps=2,
+                      epochs=3, validation_checks_per_epoch=2, save_total_limit=3, logging_steps=5)
+        with patch('transformers.TrainingArguments') as arguments, patch('transformers.Trainer'):
+            make_trainer(object(), SimpleNamespace(pad_token_id=0), config,
+                         [None] * 17, [None] * 3, Path('unused-test-output'))
+        kwargs = arguments.call_args.kwargs
+        self.assertEqual(kwargs['per_device_train_batch_size'], 2)
+        self.assertEqual(kwargs['per_device_eval_batch_size'], 3)
+        # 17 examples -> 9 microbatches -> 5 optimizer steps per epoch.
+        self.assertEqual(kwargs['eval_steps'], 2)
+        self.assertEqual(kwargs['save_steps'], 2)
+        self.assertEqual(kwargs['warmup_steps'], 1)
+        self.assertEqual(kwargs['save_total_limit'], 3)
+        self.assertEqual(kwargs['logging_steps'], 5)
+
     def test_tiny_qwen_adapter_training_and_reload(self):
         import torch
         from tokenizers import Tokenizer
